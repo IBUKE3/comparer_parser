@@ -9,8 +9,4 @@ requests
 bs4
 nltk
 pymorphy3
-os
-tempfile
-collections
-typing
-math
+
