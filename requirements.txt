@@ -1,0 +1,17 @@
+streamlit
+pandas
+numpy
+wordcloud
+matplotlib
+scikit-learn
+beautifulsoup4
+requests
+bs4
+re
+nltk
+pymorphy3
+os
+tempfile
+collections
+typing
+math
