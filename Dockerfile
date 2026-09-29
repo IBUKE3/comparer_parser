@@ -12,11 +12,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# При необходимости подгружаем ресурсы NLTK прямо в контейнер
-RUN python -m nltk.downloader punkt stopwords
+# Добавляем punkt_tab в список загружаемых ресурсов NLTK
+RUN python -m nltk.downloader punkt punkt_tab stopwords
 
 COPY . .
 
 EXPOSE 8501
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENTRYPOINT ["streamlit", "run", "main.py", "--server.port=8501", "--server.address=0.0.0.0"]
