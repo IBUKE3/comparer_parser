@@ -1,0 +1,20 @@
+name: parser_yaml
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - streamlit
+  - pandas
+  - numpy
+  - matplotlib
+  - wordcloud
+  - transformers
+  - pytorch
+  - requests
+  - beautifulsoup4
+  - pip:
+      - pymorphy3
+      - pymorphy3-dicts-ru
+      - nltk

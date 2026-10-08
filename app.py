@@ -1,17 +1,18 @@
-import html
 import os
+from transformers import pipeline
+import html
 import tempfile
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import numpy as np
-from transformers import pipeline
 
 @st.cache_resource
 def load_ner_model():
     """Загружает модель NER в оперативную память один раз при запуске."""
     hf_token = os.getenv("HF_TOKEN")
+    #hf_token =
     return pipeline(
         "ner",
         model="Babelscape/wikineural-multilingual-ner",
