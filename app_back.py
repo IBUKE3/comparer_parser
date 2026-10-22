@@ -5,11 +5,12 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords
 from pymorphy3 import MorphAnalyzer
 from transformers import pipeline
+import numpy as np
+import pandas as pd
 from collections import Counter
 from typing import Tuple
 import math
 import os
-import tempfile
 
 
 LANGUAGE = "russian"
@@ -21,28 +22,8 @@ ENCODING = "utf-8"
 # import nltk
 # nltk.download('stopwords')
 
-# could load all stopwords from a file. However, I prefer this way
-STOP_WORDS = stopwords.words(LANGUAGE)
-STOP_WORDS.extend(['в', 'на', 'под', 'над', 'за', 'у', 'о', 'об',
-                   'обо', 'по', 'из', 'изо', 'ссо', 'от', 'до',
-                   'для', 'к', 'ко', 'перед', 'при', 'через',
-                   'без', 'около', 'про', 'после', 'во', 'и', 'а',
-                   'но', 'да', 'или', 'либо', 'если', 'что', 'чтобы',
-                   'когда', 'пока', 'хотя', 'будто', 'словно', 'ибо',
-                   'потому что', 'так как', 'не', 'ни', 'ли', 'же',
-                   'вот', 'вон', 'то', 'бы', 'б', 'ли', 'лишь',
-                   'даже', 'ведь', 'дескать', 'мол', 'разве',
-                   'неужели', 'исключительно', 'только', 'всё-таки',
-                   'я', 'ты', 'он', 'она', 'оно', 'мы', 'вы', 'они',
-                   'мой', 'твой', 'свой', 'наш', 'ваш', 'кто', 'что',
-                   'какой', 'чей', 'который', 'весь', 'вся', 'всё', 'все',
-                   'этот', 'тот', 'такой', 'где', 'куда', 'откуда', 'когда',
-                   'зачем', 'почему', 'как', 'сколько', 'также', 'тоже',
-                   'здесь', 'там', 'тут', 'потом', 'затем', 'вообще', 'очень',
-                   'более', 'менее', '!', '#', '$', '%', '&', "'", '*', '+',
-                   '-', '/', '=', '?', '^', '_', '`', '{', '|', '}', '~', '.',
-                   '(', ')', '"', '–', ',', ':', '«', '»', ';', '<', '>', '—', '...'])
-SET_STOP = set(STOP_WORDS)
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_words.txt"), "r", encoding=ENCODING) as f:
+    SET_STOP = set(f.read().lower().strip().split(' '))
 PM3 = MorphAnalyzer()
 
 
@@ -120,27 +101,27 @@ def wiki_content_2_links(t) -> Counter:
     return c
 
 
-# Returns counter with number of tokens in the file
+# Returns counter with number of tokens in the text
 # Does not count tokens in SET_STOP - see global above
-def file_2_tokens(file_name: str) -> Counter:
+def str_2_tokens(text: str) -> Counter:
     c = Counter()
-    try:
-        with open(file_name, "r", encoding=ENCODING) as f:
-            text = f.read().lower()
-    except FileNotFoundError:
-        print(f"Файл {file_name} не найден. Продолжаю работу, считая его пустым")
-        return c
-    tokens = word_tokenize(text)
+    tokens = word_tokenize(text.lower())
     for i in tokens:
         if not (i in SET_STOP):
-            c[i]+=1
+            c[i] += 1
     return c
 
 
-# Gets file_name and prints named entities, recognised by wikineural
-# app_back.py
+# Uses str_2_tokens to return tokens' counter from the file
+def file_2_tokens(file_name: str) -> Counter:
+    try:
+        with open(file_name, "r", encoding=ENCODING) as f:
+            text = f.read()
+    except FileNotFoundError:
+        print(f"Файл {file_name} не найден. Продолжаю работу, считая его пустым")
+        return Counter()
+    return str_2_tokens(text)
 
-# app_back.py
 
 def chunk_text_with_offsets(text: str, max_chars: int = 1000) -> list[tuple[str, int]]:
     """
@@ -160,27 +141,12 @@ def chunk_text_with_offsets(text: str, max_chars: int = 1000) -> list[tuple[str,
                 space_pos = text.rfind(' ', start, end)
             if space_pos > start:
                 end = space_pos + 1
-
         chunk = text[start:end]
         if chunk.strip():
             chunks.append((chunk, start))
         start = end
-
     return chunks
 
-_NER_PIPELINE = None
-
-def get_ner_pipeline():
-    global _NER_PIPELINE
-    if _NER_PIPELINE is None:
-        _NER_PIPELINE = pipeline(
-            "ner",
-            model="Babelscape/wikineural-multilingual-ner",
-            aggregation_strategy="simple"
-        )
-    return _NER_PIPELINE
-
-# app_back.py
 
 def file_2_ners(file_name: str, ner_pipeline=None) -> tuple[str, list]:
     try:
@@ -198,7 +164,6 @@ def file_2_ners(file_name: str, ner_pipeline=None) -> tuple[str, list]:
         ner_pipeline = pipeline(
             "ner",
             model="Babelscape/wikineural-multilingual-ner",
-            aggregation_strategy="simple"
         )
 
     all_entities = []
@@ -207,11 +172,13 @@ def file_2_ners(file_name: str, ner_pipeline=None) -> tuple[str, list]:
     for chunk_text, offset in chunks:
         chunk_entities = ner_pipeline(chunk_text)
         for ent in chunk_entities:
+            print(ent)
             ent["start"] += offset
             ent["end"] += offset
             all_entities.append(ent)
 
     return text, all_entities
+
 
 # Gets tokens_counter from file_tokens
 # Returns Counter of lemms
@@ -223,12 +190,63 @@ def tokens_counter_2_lemms(tokens_counter: Counter) -> Counter:
     return r_c
 
 
+# Applies tokenizer and lemmatizer to a text as a string
+# Returns both counters as a tuple
+def process_str_text(text: str) -> Tuple[Counter, Counter]:
+    tokens_counter = Counter()
+    tokens = word_tokenize(text.lower())
+    for i in tokens:
+        if not (i in SET_STOP):
+            tokens_counter[i]+=1
+    lemms_counter = tokens_counter_2_lemms(tokens_counter)
+    return tokens_counter, lemms_counter
+
+
 # Applies tokenizer and lemmatizer to a file file_name
 # Returns both counters as a tuple
 def process_text_file(file_name: str) -> Tuple[Counter, Counter]:
     tokens_counter = file_2_tokens(file_name)
     lemms_counter = tokens_counter_2_lemms(tokens_counter)
     return tokens_counter, lemms_counter
+
+
+# Gets two Counter of lemms
+# Returns a tuple of their TF_IDF vectors
+def calculate_tf_idf(l1, l2):
+    len1, len2 = 0, 0
+    for word in l1:
+        len1 += l1[word]
+    for word in l2:
+        len2 += l2[word]
+    print(len1)
+
+    tf1, tf2, idf = {}, {}, {}
+    tf_idf1, tf_idf2 = [], []
+    if len1 and len2:
+        for word in set(l1).union(set(l2)):
+            tf1[word] = l1[word] / len1
+            tf2[word] = l2[word] / len2
+            df = 0
+            if word in l1:
+                df += 1
+            if word in l2:
+                df += 1
+            idf[word] = math.log((1 + 2) / (1 + df)) + 1
+            tf_idf1.append(tf1[word] * idf[word])
+            tf_idf2.append(tf2[word] * idf[word])
+    return (tf_idf1, tf_idf2)
+
+
+# Returns cosine between v1 and v2
+def calc_cos_sim(v1, v2):
+    prod = sum(i1 * i2 for i1, i2 in zip(v1, v2))
+    norm1 = math.sqrt(sum(i1 ** 2 for i1 in v1))
+    norm2 = math.sqrt(sum(i2 ** 2 for i2 in v2))
+
+    if norm1 == 0 or norm2 == 0:
+        return 0
+    else:
+        return prod / (norm1 * norm2)
 
 
 # Gets 2 filenames and processes them
@@ -248,52 +266,105 @@ def compare_2_files(file_1, file_2: str):
     t2, l2 = process_text_file(file_2)
     set_l1 = set(l1)
     set_l2 = set(l2)
-    intersection = set_l1.intersection(set_l2)
-    union = set_l1.union(set_l2)
-    l1_without_l2 = set_l1.difference(set_l2)
-    l2_without_l1 = set_l2.difference(set_l1)
-    difference = set_l1.symmetric_difference(set_l2)
-    jaccar = len(intersection)/len(union)
-
-    len1, len2 = 0, 0
-    for word in l1:
-        len1 += l1[word]
-    for word in l2:
-        len2 += l2[word]
-
-    tf1, tf2, idf = {}, {}, {}
-    tf_idf1, tf_idf2 = [], []
-    if len1 and len2:
-        for word in union:
-            tf1[word] = l1[word]/len1
-            tf2[word] = l2[word]/len2
-            df = 0
-            if word in l1:
-                df += 1
-            if word in l2:
-                df += 1
-            idf[word] = math.log((1+2)/(1+df)) + 1
-            tf_idf1.append(tf1[word] * idf[word])
-            tf_idf2.append(tf2[word] * idf[word])
-
-    tf_idf_prod = sum(v1 * v2 for v1, v2 in zip(tf_idf1, tf_idf2))
-    norm1 = math.sqrt(sum(v1 ** 2 for v1 in tf_idf1))
-    norm2 = math.sqrt(sum(v2 ** 2 for v2 in tf_idf2))
-
-    if norm1 == 0 or norm2 == 0:
-        cos_sim = 0
-    else:
-        cos_sim = tf_idf_prod / (norm1 * norm2)
+    tf_idf1, tf_idf2 = calculate_tf_idf(l1, l2)
 
     return {
         "l1_counter": l1,
         "l2_counter": l2,
-        "union": union,
-        "intersection": intersection,
-        "l1_without_l2": l1_without_l2,
-        "l2_without_l1": l2_without_l1,
-        "jaccar": jaccar,
+        "union": set_l1.union(set_l2),
+        "intersection": set_l1.intersection(set_l2),
+        "l1_without_l2": set_l1.difference(set_l2),
+        "l2_without_l1": set_l2.difference(set_l1),
+        "jaccar": len(set_l1.intersection(set_l2))/len(set_l1.union(set_l2)),
         "tf_idf1": tf_idf1,
         "tf_idf2": tf_idf2,
-        "cos_sim": cos_sim
+        "cos_sim": calc_cos_sim(tf_idf1, tf_idf2)
     }
+
+
+# Takes all lemms counters and returns one with all lems
+# Value of c[word] is sum of all c_i[word] in list
+def summarize_lemms_counters(list_lemmas_counters: list[Counter]):
+    c = Counter()
+    for l in list_lemmas_counters:
+        c.update(l)
+    return c
+
+
+# DF as frequency of word as a key in lemms' counters
+def calculate_df(list_lemmas_counters: list[Counter]):
+    c = Counter()
+    for l in list_lemmas_counters:
+        c.update(l.keys())
+    return c
+
+
+# Using smoothed IDF here (better for 2 texts and generally)
+def calculate_idf(general_lemmas_counter: Counter, df: Counter, n_texts: int):
+    idf = {}
+    for word in general_lemmas_counter.keys():
+        idf[word]  = math.log((1 + n_texts) / (1 + df[word])) + 1
+    return idf
+
+
+# Gets list of lemmas' counters
+# Returns lists of tf_idf vectors for every text
+def calculate_tf_idf_multi(list_lemmas_counters: list[Counter]):
+    n_texts = len(list_lemmas_counters)
+    general_counter = summarize_lemms_counters(list_lemmas_counters)
+    word_to_pos = {word: idx for idx, word in enumerate(general_counter)}
+    n_lemms = len(general_counter)
+    idf = calculate_idf(general_counter, calculate_df(list_lemmas_counters), n_texts)
+    res = []
+    for lc in list_lemmas_counters:
+        subres = [0] * n_lemms
+        words_in_text_n = sum(lc.values())
+        if words_in_text_n > 0:
+            for word in lc.keys():
+                tf = lc[word]/words_in_text_n
+                subres[word_to_pos[word]] = tf * idf[word]
+        res.append(subres)
+    return res
+
+
+# Calculates cosine similarity between each 2 tf_idf vectors
+# Builds symmetric matrix, where m[i,j]=m[j,i]=cos_sim(between tf_idf_i & tf_idf_j
+def build_cosine_matrix(list_lemmas_counters: list[Counter]):
+    n_texts = len(list_lemmas_counters)
+    m = np.ones((n_texts, n_texts))
+    tf_idfs = calculate_tf_idf_multi(list_lemmas_counters)
+    for i in range(0, n_texts):
+        for j in range(i+1, n_texts):
+            r = calc_cos_sim(tf_idfs[i], tf_idfs[j])
+            m[i, j] = r
+            m[j, i] = r
+    return m
+
+
+# Builds symmetric matrix with jaccar' coef-s for each 2 texts
+def build_jaccar_matrix(list_lemmas_counters: list[Counter]):
+    n_texts = len(list_lemmas_counters)
+    m = np.ones((n_texts, n_texts))
+    sets_list = []
+    for lc in list_lemmas_counters:
+        sets_list.append(set(lc.keys()))
+    for i in range(0, n_texts):
+        for j in range(i+1, n_texts):
+            united_set = sets_list[i].union(sets_list[j])
+            u_len = len(united_set)
+            if u_len == 0:
+                r = 0
+            else:
+                r = len(sets_list[i].intersection(sets_list[j]))/u_len
+            m[i, j] = r
+            m[j, i] = r
+    return m
+
+# Builds matrices with cosine similarity and jaccar coefficient
+# Returns them as pd.Dataframe
+def calculate_corpus_matrices(list_lemmas_counters: list[Counter], list_names: list[str]):
+    cos_matr = build_cosine_matrix(list_lemmas_counters)
+    jac_matr = build_jaccar_matrix(list_lemmas_counters)
+    df_cos = pd.DataFrame(cos_matr, index=list_names, columns=list_names)
+    df_jac = pd.DataFrame(jac_matr, index=list_names, columns=list_names)
+    return df_cos, df_jac
